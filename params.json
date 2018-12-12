@@ -1,0 +1,22 @@
+{
+  "num_layers": 1,
+  "model": "CNN",
+  "hidden_size": 256,
+  "n_outputs": 10,
+  "filter_sizes": [2, 3, 4],
+  "num_filters": 10,
+  "art_filter_sizes": [2, 3, 4],
+  "art_num_filters": 10,
+  "pretrain": true,
+  "embedding_size": 300,
+  "learning_rate": 0.00001,
+  "keep_ratio": 0.75,
+  "epochs": 30,
+  "cell": "GRU",
+  "task": "detect and extract",
+  "entity_keep_ratio": 0.75,
+  "entity_learning_rate": 0.001,
+  "entity_num_filters": 3,
+  "batch_size": 10,
+  "test": true
+}

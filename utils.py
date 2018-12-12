@@ -1,0 +1,110 @@
+from nltk.corpus import stopwords
+import re
+import numpy as np
+import nltk.tokenize as tokenizer
+from collections import Counter
+import operator
+from tqdm import tqdm
+from nltk import sent_tokenize
+
+def get_vocabs(df):
+    data = [tokenizer.TreebankWordTokenizer().tokenize(sent) for sent in df]
+    dictionary = Counter([word.lower() for sent in data for word in sent])
+    words, counts = zip(*sorted(dictionary.items(), key=operator.itemgetter(1), reverse=True))
+
+    # Gets the list of words and characters in the dataset
+    """
+    v = open("google-10000-english-usa.txt", "r").readlines()
+    all = [r.replace("\n", "") for r in v]
+    vocab = all + ["<unk>", "<pad>"]
+    """
+    vocab = list(words[:10000]) + ["<unk>", "<pad>"]
+    print("vocab size:", len(vocab))
+    return vocab
+
+def read_embedding(vocab):
+    # reads an embedding file and return a dictionary of word: vector
+    with open("embeddings/glove.300.txt", 'r') as file:
+        vectors = dict()
+        for line in file:
+            tokens = line.split()
+            vec = np.array(tokens[len(tokens) - 300:], dtype=np.float32)
+            token = "".join(tokens[:len(tokens) - 300])
+            vectors[token] = vec
+    unk_embedding = np.random.rand(300) * 2. - 1.
+    embedding = dict()
+    for v in vocab:
+        try:
+            embedding[v] = vectors[v]
+        except Exception:
+            # if the word is not in the embeddings, use the random vector
+            embedding[v] = unk_embedding
+    return np.array(list(embedding.values()))
+
+def bag_to_ids(dic, bag):
+    i_bag = list()
+    max_len = max(len(sent) for sent in bag)
+    lengths = list()
+    for sent in bag:
+        i_sent = list()
+        for word in sent:
+            try:
+                i_sent.append(dic[word.lower()])
+            except Exception:
+                i_sent.append(dic["<unk>"])
+        lengths.append(len(i_sent))
+        while len(i_sent) < max_len:
+            i_sent.append(dic["<pad>"])
+        i_bag.append(i_sent)
+    return i_bag, len(bag), lengths
+
+def stop_words(sent):
+    stop_words = set(stopwords.words('english'))
+    stop_words_exp = re.compile(r"({})\s+".format('|'.join(stop_words)))
+    try:
+        new_sent = stop_words_exp.sub(' ', sent)
+    except TypeError:
+        print(sent)
+        new_sent = []
+    return new_sent
+
+
+def clean(sent):
+    sent = stop_words(sent)
+    #sent = re.sub(r"[\s]+", " ", sent)
+    return sent
+
+def TrainToBags(df, vocab, test=False):
+    dictionary = {word: idx for idx, word in enumerate(vocab)}
+    bags = list()
+    print("Cleaning data ...")
+    with tqdm(total=df.shape[0]) as counter:
+        for idx, row in df.iterrows():
+            words = [tokenizer.TreebankWordTokenizer().tokenize(sent) for sent in sent_tokenize(row["text"])]
+            bag, sentences, lengths = bag_to_ids(dictionary, words)
+            if test:
+                bags.append((bag, lengths, sentences))
+            else:
+                bags.append((bag, lengths, row["labels"], row["target"], row["action"], sentences))
+            counter.update(1)
+    return bags
+
+def BatchIt(bags, batch_size, vocab):
+    batches = list()
+    for idx in range(len(bags) // batch_size + 1):
+        batch = bags[idx * batch_size: min((idx + 1) * batch_size, len(bags))]
+        try:
+            max_bag = max([len(bag[0]) for bag in batch])
+            max_len = max([len(sent) for bag in batch for sent in bag[0]])
+        except Exception:
+            continue
+        for bag in batch:
+            padding = [vocab.index("<pad>") for i in range(max_len)]
+            sub_pad = [vocab.index("<pad>") for i in range(max_len - len(bag[0][0]))]
+            for sent in bag[0]:
+                sent.extend(sub_pad)
+            while len(bag[0]) < max_bag:
+                bag[0].append(padding)
+                bag[1].append(0)
+        batches.append(batch)
+    return batches
