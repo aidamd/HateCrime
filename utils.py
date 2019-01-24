@@ -41,13 +41,13 @@ def read_embedding(vocab):
             embedding[v] = unk_embedding
     return np.array(list(embedding.values()))
 
-def bag_to_ids(dic, bag):
+def bag_to_ids(dic, bag, max_length):
     i_bag = list()
-    max_len = max(len(sent) for sent in bag)
+    max_len = min(max(len(sent) for sent in bag), max_length)
     lengths = list()
-    for sent in bag:
+    for sent in bag[:min(200, len(bag))]:
         i_sent = list()
-        for word in sent:
+        for word in sent[:min(max_len, len(sent))]:
             try:
                 i_sent.append(dic[word.lower()])
             except Exception:
@@ -74,14 +74,14 @@ def clean(sent):
     #sent = re.sub(r"[\s]+", " ", sent)
     return sent
 
-def TrainToBags(df, vocab, test=False):
+def TrainToBags(df, vocab, test=False, max_length=300):
     dictionary = {word: idx for idx, word in enumerate(vocab)}
     bags = list()
     print("Cleaning data ...")
     with tqdm(total=df.shape[0]) as counter:
         for idx, row in df.iterrows():
             words = [tokenizer.TreebankWordTokenizer().tokenize(sent) for sent in sent_tokenize(row["text"])]
-            bag, sentences, lengths = bag_to_ids(dictionary, words)
+            bag, sentences, lengths = bag_to_ids(dictionary, words, max_length)
             if test:
                 bags.append((bag, lengths, sentences))
             else:

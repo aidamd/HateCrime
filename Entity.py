@@ -46,7 +46,7 @@ class Entity():
         # the weight of each action label is 1 - (label frequency) / (all articles)
         self.act_weight = tf.placeholder(tf.float64, [None])
 
-        cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
+        cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size, reuse=tf.AUTO_REUSE)
 
         cell_drop = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.keep_ratio)
         self.network = tf.contrib.rnn.MultiRNNCell([cell_drop] * self.num_layers)
