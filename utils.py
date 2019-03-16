@@ -85,11 +85,15 @@ def TrainToBags(df, vocab, test=False, max_length=300):
             if test:
                 bags.append((bag, lengths, sentences))
             else:
-                bags.append((bag, lengths, row["labels"], row["target"], row["action"], sentences))
+                bags.append((bag, lengths, row["labels"], "", "", sentences))
             counter.update(1)
     return bags
 
-def BatchIt(bags, batch_size, vocab):
+def BatchIt(bags, batch_size, vocab, unlabeled=False):
+    if unlabeled:
+        lengths = 2
+    else:
+        lengths = 5
     batches = list()
     for idx in range(len(bags) // batch_size + 1):
         batch = bags[idx * batch_size: min((idx + 1) * batch_size, len(bags))]
@@ -101,8 +105,10 @@ def BatchIt(bags, batch_size, vocab):
         for bag in batch:
             padding = [vocab.index("<pad>") for i in range(max_len)]
             sub_pad = [vocab.index("<pad>") for i in range(max_len - len(bag[0][0]))]
-            for sent in bag[0]:
+            for sent in bag[0][:bag[lengths]]:
                 sent.extend(sub_pad)
+            if len(bag[0]) > bag[lengths]:
+                bag[0][bag[lengths]].extend(sub_pad)
             while len(bag[0]) < max_bag:
                 bag[0].append(padding)
                 bag[1].append(0)
