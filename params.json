@@ -1,6 +1,7 @@
 {
   "num_layers": 1,
-  "model": "MICNN",
+  "model": "Attn",
+  "dataset": "kidnap",
   "hidden_size": 50,
   "n_outputs": 10,
   "filter_sizes": [2, 3, 4],
@@ -12,13 +13,14 @@
   "embedding_size": 300,
   "learning_rate": 0.00008,
   "keep_ratio": 0.75,
-  "epochs": 50,
+  "epochs": 30,
   "cell": "GRU",
-  "task": "detect and extract",
+  "task": "detect",
   "entity_keep_ratio": 0.75,
-  "entity_learning_rate": 0.001,
+  "entity_learning_rate": 0.0001,
   "entity_num_filters": 3,
   "batch_size": 5,
-  "train": true,
-  "max_length": 500
+  "sub_task": "train",
+  "max_length": 500,
+  "sentences": true
 }
