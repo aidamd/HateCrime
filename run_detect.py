@@ -1,7 +1,6 @@
 import json
 import os
 from MICNN import *
-from Entity import Entity
 from Hi_Attn import *
 import argparse
 
@@ -48,12 +47,7 @@ def _detect(params, data):
         if train_sent:
             for j, articles in enumerate([train_batches, test_batches, dev_batches]):
                 for i in range(len(articles)):
-                    if best_sent[j][i][0] < len(articles[i]["article"])\
-                            and best_sent[j][i][1] < len(articles[i]["article"]):
-                        articles[i]["best_sent"] = best_sent[j][i]
-                    else:
-                        print()
-
+                    articles[i]["best_sent"] = best_sent[j][i]
 
             pickle.dump((train_batches, dev_batches, test_batches, vocabs, embedding),
                         open("Data/" + args.dataset + "/data.pkl", "wb"))
@@ -69,38 +63,15 @@ def _detect(params, data):
                 else:
                     hate_batches.append(unlabeled_batches[i] + (hate_pred[i], i))
         pickle.dump(hate_batches, open("Data/" + args.dataset + "/predict.pkl", "wb"))
+
     elif args.goal == "active":
         probabilities = model.predict(unlabeled_batches, active_learning=True)
         pickle.dump(probabilities, open("probability.pkl", "wb"))
 
-def _extract(params, data):
-    train_batches, dev_batches, test_batches, vocabs, embedding = data
-    hate_train_batches = [train for train in train_batches if train["labels"] == 1]
-    hate_dev_batches = [dev for dev in dev_batches if dev["labels"] == 1]
-    hate_test_batches = [test for test in test_batches if test["labels"] == 1]
-
-    t_weights = np.array([1 - (Counter([train["target_label"] for train in hate_train_batches])[i] /
-                               len(hate_train_batches)) for i in range(8)])
-    a_weights = np.array([1 - (Counter([train["action_label"] for train in hate_train_batches])[i] /
-                               len(hate_train_batches)) for i in range(4)])
-    entity = Entity(params, vocabs, embedding)
-    entity.build()
-    if args.goal == "train":
-        entity.run_model(BatchIt(hate_train_batches, params["batch_size"], vocabs),
-                         BatchIt(hate_dev_batches, params["batch_size"], vocabs),
-                         BatchIt(hate_test_batches, params["batch_size"], vocabs),
-                         (t_weights, a_weights))
-    elif args.goal == "predict":
-        unlabeled_batches = pickle.load(open("Data/" + args.dataset + "/predict.pkl", "rb"))
-        target, action = entity.predict(unlabeled_batches, (t_weights, a_weights))
-        pickle.dump(target, open("Data/" + args.dataset + "/targets.pkl", "wb"))
-        pickle.dump(action, open("Data/" + args.dataset + "/actions.pkl", "wb"))
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    
-    parser.add_argument("--task", help = "The task can be extract or detect")
+
     parser.add_argument("--model", help = "Model is either MICNN or ATTN")
     parser.add_argument("--goal", help = "Goal can be either train or predict")
     parser.add_argument("--dataset", help="Dataset is either hate, homicide or kidnap")
@@ -118,10 +89,6 @@ if __name__ == "__main__":
 
     params["dataset"] = args.dataset
     data = _load_data(params, args)
+    _detect(params, data)
 
-    if args.task == "detect":
-        _detect(params, data)
-    
-    if args.task == "extract":
-        _extract(params, data)
 
