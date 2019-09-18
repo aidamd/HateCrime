@@ -1,6 +1,11 @@
 # Hate crime detection and entity extraction
 
-This project is composed of two models to detect and extract hate crime events from news articles.
+This repo contains code and data for the following paper:
+["Reporting the unreported: Event Extraction for Analyzing the Local Representation of Hate Crimes". EMNLP 2019](https://arxiv.org/pdf/1909.02126.pdf)
+
+The method includes a Mulit-instance Learning models for detecting hate crimes in local news articles and a RNN model for extracting the entities of each hate crime.
+The annotated datasets for three types of crimes (hate, kidnapping and homicide) is included in the `Data` folder.
+ 
 
 ## Getting Started
 
