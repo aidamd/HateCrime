@@ -1,4 +1,4 @@
-# Event Detection
+# Hate crime detection and entity extraction
 
 This project is composed of two models to detect and extract hate crime events from news articles.
 
@@ -20,22 +20,13 @@ numpy 1.14.3
 
 ```
 
-The following libraries are only used in the crawling script. You should download them of you are going to use the code in Crawl directory:
-```
-bs4 4.6.0
-splinter 0.7.7
-newspaper3k 0.2.6
-```
-
-## Running the code
+## Parameters
 
 All the parameters of the code are denoted in params.json.
 The parameters are defined as following:
 
 ```
-  "task": "detect and extract" # detect and extract are the two tasks
-  "num_layers": 1 # number of LSTM layers
-  "hidden_size": 256 # hidden size of the LSTM
+  "hidden_size": 100 # hidden size of the LSTM
   "art_filter_sizes": [2, 3, 4] # filter sizes in detect model
   "art_num_filters": 10 # number of different filters in detect model
   "pretrain": true # if set to true, uses Glove embeddings
@@ -43,16 +34,38 @@ The parameters are defined as following:
   "learning_rate": 0.00001 # learning rate for the detect task
   "keep_ratio": 0.75 # keep ratio for the detect task
   "epochs": 30 # number of epochs
-  "cell": "GRU" # cells used in RNN
   "entity_keep_ratio": 0.75 # keep ratio in extract task
   "entity_learning_rate": 0.001 # learning rate in extract task
-  "entity_num_filters": 3 # number of filters in extract task
-  "batch_size": 10 # size of batches, shows the number of articles in each batch
+  "batch_size": 5 # size of batches, shows the number of articles in each batch
 ```
 
-### Testing the code
+### Running the detection code
 
-In order to test the detect task, make sure that the "task" parameter in param.json includes the word "detect" and run the following:
+In order to run the detection code, use the following script:
+
+`python3 run_detect.py --model <MODEL_NAME> --goal <GOAL> --dataset <DATASET> --params <PARAMS_FILE>`
+
+substitude the following tokens according to the task in mind:
+
+- `<MODEL_NAME>`: you can either use `MICNN` (the model used in the paper) or `ATTN` (the hierarchical attention baseline)
+- `<GOAL>`: the goal of the task is either `train` or `predicts`
+- `<DATASET>`: use one of the three datasets (`hate`, `kidnap` or `homicide`) to perform the detection 
+- `<PARAM_FILE>`: is the .json file that includes all the model parameters. The model uses `params.json` as default.
+
+
+### Running the extraction code
+
+In order to run the detection code, use the following script:
+
+`python3 run_extract.py --goal <GOAL> --params <PARAMS_FILE>`
+
+substitude the following tokens according to the task in mind:
+
+- `<GOAL>`: the goal of the task is either `train` or `predicts`
+- `<PARAM_FILE>`: is the .json file that includes all the model parameters. The model uses `params.json` as default.
+
+
+
 
 ```
 python3 run.py

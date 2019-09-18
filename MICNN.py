@@ -135,6 +135,7 @@ class MICNN():
                     indices_pred.extend(list(indices))
                     hate_pred.extend(list(hate))
                     hate_prob.extend(list(prob))
+                    
         if active_learning:
             return hate_pred, indices_pred, hate_prob
         else:
