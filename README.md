@@ -68,14 +68,3 @@ substitude the following tokens according to the task in mind:
 
 - `<GOAL>`: the goal of the task is either `train` or `predicts`
 - `<PARAM_FILE>`: is the .json file that includes all the model parameters. The model uses `params.json` as default.
-
-
-
-
-```
-python3 run.py
-```
-
-If the "task" parameter also include "extract", the extract task will be tested too.
-
-
