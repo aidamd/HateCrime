@@ -14,16 +14,12 @@ class MICNN():
 
     def build_embedding(self):
         if self.pretrain:
-            embeddings = tf.Variable(tf.constant(0.0, shape=[len(self.vocabs), self.embedding_size]),
-                                     trainable=False, name="W")
-
-            embedding_placeholder = tf.placeholder(tf.float32, [len(self.vocabs), self.embedding_size])
-            embedding_init = embeddings.assign(embedding_placeholder)
+            embedding_placeholder = tf.placeholder(tf.float32,
+                                                   [len(self.vocabs), self.embedding_size])
         else:
-            embedding_placeholder = tf.get_variable("embedding",
-                                                    initializer=tf.random_uniform(
-                                                        [len(self.vocabs), self.embedding_size], -1, 1),
-                                                    dtype=tf.float32)
+            embedding_placeholder = tf.get_variable("embedding", initializer=tf.random_uniform(
+                [len(self.vocabs), self.embedding_size], -1, 1), dtype=tf.float32)
+
         return embedding_placeholder
 
 
@@ -41,16 +37,21 @@ class MICNN():
         self.keep_prob = tf.placeholder(tf.float32)
 
         shape = tf.shape(self.embed)
+
+        # the inputs are reshaped to [all sentences, sentence_len] to be passed to LSTM
         embed = tf.reshape(self.embed, [shape[0] * shape[1], shape[2], self.embedding_size])
         self.sequence_length = tf.reshape(self.sequence_length, [tf.shape(embed)[0]])
 
-        cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
-        cell_drop = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.keep_ratio)
-        self.network = tf.contrib.rnn.MultiRNNCell([cell_drop] * self.num_layers)
+        f_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
+        f_cell_drop = tf.contrib.rnn.DropoutWrapper(f_cell, input_keep_prob=self.keep_ratio)
+        self.f_network = tf.contrib.rnn.MultiRNNCell([f_cell_drop] * self.num_layers)
 
-        # the inputs are reshaped to [all sentences, sentence_len] to be passed to LSTM
-        bi_outputs, bi_states = tf.nn.bidirectional_dynamic_rnn(self.network, self.network,
-                                                                embed,dtype=tf.float32,
+        b_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size, reuse=False )
+        b_cell_drop = tf.contrib.rnn.DropoutWrapper(b_cell, input_keep_prob=self.keep_ratio)
+        self.b_network = tf.contrib.rnn.MultiRNNCell([b_cell_drop] * self.num_layers)
+
+        bi_outputs, bi_states = tf.nn.bidirectional_dynamic_rnn(self.f_network, self.b_network,
+                                                                embed, dtype=tf.float32,
                                                                 sequence_length=self.sequence_length)
         fw_states, bw_states = bi_states
         state = tf.concat([fw_states, bw_states], 2)
@@ -70,7 +71,6 @@ class MICNN():
             pooled = tf.reduce_max(relu, axis=1, keep_dims=True)
             art_pooled_outputs.append(pooled)
 
-        #art_num_filters_total = 2 * self.hidden_size * self.art_num_filters * len(self.art_filter_sizes)
         art_num_filters_total = self.art_num_filters * len(self.art_filter_sizes)
 
         # [batch_size, art_num_filters]
@@ -90,18 +90,11 @@ class MICNN():
         self.drop = tf.nn.dropout(self.drop, keep_prob=self.keep_ratio)
 
         self.fc_drop = fully_connected(self.drop, 1, activation_fn=tf.sigmoid)
-        #self.fc = fully_connected(self.drop, 1)
-        #self.fc_drop = tf.nn.softmax(self.fc)
 
-
-        # High rank sentences
-        high_count = tf.ceil(tf.scalar_mul(0.2, tf.to_float(shape[1])))
-
-        #a = tf.gather(tf.reshape(self.fc_drop, [shape[0], shape[1]]), self.article_lens, axis=1)
         a = tf.reshape(self.fc_drop, [shape[0], shape[1]])
         b = tf.cast(2, tf.int32)
 
-        #[batch_size, high_count]
+        #[batch_size, 2]
         self.highests = tf.nn.top_k(a, b)
 
         self.logits1 = tf.reduce_mean(self.highests.values, axis=1)
@@ -119,31 +112,9 @@ class MICNN():
             tf.cast(tf.equal(self.predicted_label, self.output), tf.float32))
         self.training_op = tf.train.AdamOptimizer(learning_rate=self.learning_rate).minimize(self.loss)
 
-    def active_learn(self, unlabeled_batches):
-        hate_prob = list()
-        saver = tf.train.Saver()
-        with tf.Session() as self.sess:
-            saver.restore(self.sess, "model/" + self.dataset + "/MICNN/micnn_model_2.ckpt")
-            for i in range(len(unlabeled_batches) // 5000 + 1):
-                print("Gathering labels for 5000 datapoints, batch #", i)
-                sub = unlabeled_batches[i * 5000: min((i + 1) * 5000, len(unlabeled_batches))]
-                batches = BatchIt(sub, self.batch_size, self.vocabs, True)
-                for batch in batches:
-                    feed_dict = {self.train_inputs: np.array([b[0] for b in batch]),
-                                 self.sequence_length: np.array([l for b in batch for l in b[1]]),
-                                 self.keep_prob: 1,
-                                 self.article_lens: np.array([b[2] for b in batch])
-                                 }
-                    if self.pretrain:
-                        feed_dict[self.embedding_placeholder] = self.my_embeddings
-                    prob = self.sess.run(self.softmax,feed_dict=feed_dict)
-                    hate_prob.extend(list(prob))
-        return hate_prob
 
-
-    def predict(self, unlabeled_batches):
-        hate_pred = list()
-        indices_pred = list()
+    def predict(self, unlabeled_batches, active_learning=False):
+        hate_pred, indices_pred, hate_prob = list(), list(), list()
         saver = tf.train.Saver()
         with tf.Session() as self.sess:
             saver.restore(self.sess,  "model/" + self.dataset + "/MICNN/micnn_model_2.ckpt")
@@ -152,26 +123,29 @@ class MICNN():
                 sub = unlabeled_batches[i * 5000: min((i + 1) * 5000, len(unlabeled_batches))]
                 batches = BatchIt(sub, self.batch_size, self.vocabs, True)
                 for batch in batches:
-                    feed_dict = {self.train_inputs: np.array([b[0] for b in batch]),
-                                 self.sequence_length: np.array([l for b in batch for l in b[1]]),
+                    feed_dict = {self.train_inputs: np.array([b["article"] for b in batch]),
+                                 self.sequence_length: np.array([l for b in batch for l in b["lengths"]]),
                                  self.keep_prob: 1,
-                                 self.article_lens: np.array([b[2] for b in batch])
+                                 self.article_lens: np.array([b["sent_lengths"] for b in batch])
                                  }
                     if self.pretrain:
                         feed_dict[self.embedding_placeholder] = self.my_embeddings
-                    hate, indices = self.sess.run([self.predicted_label, self.best_sentences],
+                    hate, indices, prob = self.sess.run([self.predicted_label, self.best_sentences, self.softmax],
                                                   feed_dict=feed_dict)
                     indices_pred.extend(list(indices))
                     hate_pred.extend(list(hate))
-                    # pickle.dump(hate_pred, open("patch_tmp.pkl", "wb"))
-        return hate_pred, indices_pred
+                    hate_prob.extend(list(prob))
+        if active_learning:
+            return hate_pred, indices_pred, hate_prob
+        else:
+            return hate_pred, indices_pred
 
     def get_feed_dict(self, batch, train=True):
-        feed_dict = {self.train_inputs: np.array([b[0] for b in batch]),
-                     self.sequence_length: np.array([l for b in batch for l in b[1]]),
+        feed_dict = {self.train_inputs: np.array([b["article"] for b in batch]),
+                     self.sequence_length: np.array([l for b in batch for l in b["lengths"]]),
                      self.keep_prob: self.keep_ratio if train else 1,
-                     self.output: np.array([b[2] for b in batch]),
-                     self.article_lens: np.array([b[5] for b in batch])
+                     self.output: np.array([b["labels"] for b in batch]),
+                     self.article_lens: np.array([b["sent_lengths"] for b in batch])
                      }
         if self.pretrain:
             feed_dict[self.embedding_placeholder] = self.my_embeddings
@@ -187,7 +161,6 @@ class MICNN():
             while True:
                 ## Train
                 epoch_loss = float(0)
-                epoch += 1
                 train_accuracy = 0
                 for batch in batches:
                     feed_dict = self.get_feed_dict(batch)
@@ -197,35 +170,25 @@ class MICNN():
                     epoch_loss += loss_val
                 ## Dev
                 test_accuracy = 0
-                hate_pred, hate_true = list(), list()
                 for batch in dev_batches:
                     feed_dict = self.get_feed_dict(batch, False)
                     test_accuracy += self.accuracy.eval(feed_dict=feed_dict)
-                    try:
-                        hate = self.predicted_label.eval(feed_dict=feed_dict)
-                        hate_pred.extend(list(hate))
-                        hate_true.extend([b[2] for b in batch])
-                    except Exception:
-                        print()
-                print(sum(hate_pred))
                 print(epoch, "Train accuracy:", train_accuracy / len(batches),
                       "Loss:", epoch_loss / float(len(batches)),
-                      "Test accuracy:", test_accuracy / len(dev_batches),
-                      "Hate F1:", f1_score(hate_true, hate_pred, average="binary"),
-                      "Precision", precision_score(hate_true, hate_pred),
-                      "Recall", recall_score(hate_true, hate_pred))
+                      "Dev accuracy:", test_accuracy / len(dev_batches))
+                epoch += 1
                 if epoch == self.epochs:
                     save_path = saver.save(self.sess, "model/" + self.dataset + "/MICNN/micnn_model_2.ckpt")
                     break
-
             test_accuracy = 0
+            hate_pred, hate_true = list(), list()
             for batch in test_batches:
                 feed_dict = self.get_feed_dict(batch, False)
                 test_accuracy += self.accuracy.eval(feed_dict=feed_dict)
                 try:
                     hate = self.predicted_label.eval(feed_dict=feed_dict)
                     hate_pred.extend(list(hate))
-                    hate_true.extend([b[2] for b in batch])
+                    hate_true.extend([b["labels"] for b in batch])
                 except Exception:
                     print()
             print("Test report",
@@ -244,7 +207,7 @@ class MICNN():
             saver.restore(self.sess, "model/" + self.dataset + "/MICNN/micnn_model_2.ckpt")
             train_sent, dev_sent, test_sent = list(), list(), list()
             for batch in train_batches:
-                feed_dict = self.get_feed_dict(batch, False)
+                feed_dict = self.get_feed_dict(batch)
                 train_sent.extend(list(self.sess.run(self.best_sentences, feed_dict=feed_dict)))
 
             for batch in dev_batches:

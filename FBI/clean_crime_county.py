@@ -3,9 +3,9 @@ import glob
 import math
 
 dataset = {"state": [],
-           "city": [],
+           "county": [],
            "year": [],
-           "statecity": [],
+           "statecounty": [],
            "kidnap": [],
            "homicide": []
            }
@@ -34,7 +34,7 @@ for file in glob.glob("crime/*"):
             s = True
         if isinstance(row[0], str):
             state = row[0]
-        if row[1] == "Cities":
+        if row[1] == "Metropolitan Counties" or row[1] == "Nonmetropolitan Counties":
             agency = True
         elif isinstance(row[1], str):
             agency = False
@@ -42,21 +42,21 @@ for file in glob.glob("crime/*"):
             if not isinstance(row[2], str):
                 continue
             else:
-                city = row[2]
+                county = row[2]
                 try:
                     homicides = row[homicide]
                     kidnaps = row[kidnap]
                 except Exception:
                     print()
                 state = state.replace("District of Columbia", "District-Columbia").replace(" ", "-")
-                city = city.replace("New York", "New York City")
+                county = county.replace("New York", "New York City")
                 dataset["state"].append(state)
-                dataset["city"].append(city)
+                dataset["county"].append(county)
                 dataset["year"].append(year)
-                dataset["statecity"].append(state.lower() + ", " + city.lower())
+                dataset["statecounty"].append(state.lower() + ", " + county.lower())
                 try:
                     dataset["homicide"].append(int(homicides) if not math.isnan(homicides) else 0)
                 except Exception:
                     print()
                 dataset["kidnap"].append(int(kidnaps) if not math.isnan(kidnaps) else 0)
-pd.DataFrame.from_dict(dataset).to_csv("FBI-crime-cities.csv", index=False)
+pd.DataFrame.from_dict(dataset).to_csv("FBI-crime-counties.csv", index=False)

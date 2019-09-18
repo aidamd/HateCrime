@@ -16,8 +16,8 @@ class Entity():
 
     def build_embedding(self):
         if self.pretrain:
-            embedding_placeholder = tf.Variable(tf.constant(0.0, shape=[len(self.vocab), self.embedding_size]),
-                                     trainable=False, name="W")
+            embedding_placeholder = tf.Variable(tf.constant(0.0, shape=[len(self.vocab),
+                                                self.embedding_size]), trainable=False, name="W")
         else:
             embedding_placeholder = tf.get_variable("embedding",
                                                     initializer=tf.random_uniform(
@@ -30,7 +30,6 @@ class Entity():
         self.train_inputs = tf.placeholder(tf.int32, shape=[None, None, None], name="inputs")
         self.embedding_placeholder = self.build_embedding()
         self.indices = tf.placeholder(tf.int32, shape=[None, None, None])
-
         self.important_inputs = tf.gather_nd(self.train_inputs, self.indices)
 
         # length of each sentence in the whole batch
@@ -51,11 +50,13 @@ class Entity():
         # the weight of each action label is 1 - (label frequency) / (all articles)
         self.act_weight = tf.placeholder(tf.float64, [None])
 
-        cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size, reuse=tf.AUTO_REUSE)
+        f_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
+        f_cell_drop = tf.contrib.rnn.DropoutWrapper(f_cell, input_keep_prob=self.keep_ratio)
+        self.f_network = tf.contrib.rnn.MultiRNNCell([f_cell_drop] * self.num_layers)
 
-        cell_drop = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.keep_ratio)
-        self.network = tf.contrib.rnn.MultiRNNCell([cell_drop] * self.num_layers)
-
+        b_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size, reuse=False )
+        b_cell_drop = tf.contrib.rnn.DropoutWrapper(b_cell, input_keep_prob=self.keep_ratio)
+        self.b_network = tf.contrib.rnn.MultiRNNCell([b_cell_drop] * self.num_layers)
         shape = tf.shape(self.embed)
 
         # the inputs are reshaped to [all sentences, sentence_len] to be passed to LSTM
@@ -63,16 +64,14 @@ class Entity():
         self.important_lengths = tf.reshape(self.important_lengths, [tf.shape(embed)[0]])
 
         # Bi-directional LSTM to capture the sentence representation
-        bi_outputs, bi_states = tf.nn.bidirectional_dynamic_rnn(self.network, self.network, embed,
+        bi_outputs, bi_states = tf.nn.bidirectional_dynamic_rnn(self.f_network, self.b_network, embed,
                                                                 dtype=tf.float32,
                                                                 sequence_length=self.important_lengths)
         fw_states, bw_states = bi_states
-
         state = tf.concat([fw_states, bw_states], 2)
 
         # vectors are reshaped to form the articles
         state = tf.reshape(state, [shape[0], shape[1], 2 * self.hidden_size])
-
         state = tf.nn.dropout(state, keep_prob=self.keep_ratio)
 
         fc_target = fully_connected(state, 9)
@@ -93,7 +92,6 @@ class Entity():
                                                                    weights=a_weight)
 
         self.loss = tf.add(self.target_xentropy, self.act_xentropy)
-
         self.predicted_target = tf.argmax(self.high_target, 1)
         self.predicted_act = tf.argmax(self.high_act, 1)
 
@@ -107,27 +105,20 @@ class Entity():
 
     def get_feed_dict(self, batch, weights, train=True):
         target_weight, act_weight = weights
+        indices = np.array([[[idx, b["best_sent"][0]], [idx, b["best_sent"][1]]]
+                            for idx, b in enumerate(batch)])
+
+        feed_dict = {self.train_inputs: np.array([b["article"] for b in batch]),
+                 self.sequence_length: np.array([b["lengths"] for b in batch]),
+                 self.keep_ratio: self.entity_keep_ratio if train else 1,
+                 self.target_weight: target_weight,
+                 self.act_weight: act_weight,
+                 self.indices: indices
+                 }
         if train:
-            indices = np.array([[[idx, b[6][0]], [idx, b[6][1]]] for idx, b in enumerate(batch)])
+            feed_dict[self.target_group] = np.array([b["target_label"] for b in batch])
+            feed_dict[self.hate_act] = np.array([b["action_label"] for b in batch])
 
-            feed_dict = {self.train_inputs: np.array([b[0] for b in batch]),
-                     self.sequence_length: np.array([b[1] for b in batch]),
-                     self.keep_ratio: self.entity_keep_ratio if train else 1,
-                     self.target_group: np.array([b[3] for b in batch]),
-                     self.hate_act: np.array([b[4] for b in batch]),
-                     self.target_weight: target_weight,
-                     self.act_weight: act_weight,
-                     self.indices: indices
-                     }
-        else:
-            indices = np.array([[[idx, b[4][0]], [idx, b[4][1]]] for idx, b in enumerate(batch)])
-
-            feed_dict = {self.train_inputs: np.array([b[0] for b in batch]),
-                    self.sequence_length: np.array([b[1] for b in batch]),
-                    self.keep_ratio: self.entity_keep_ratio if train else 1, 
-                    self.target_weight: target_weight, 
-                    self.act_weight: act_weight,
-                    self.indices: indices}
         if self.pretrain:
             feed_dict[self.embedding_placeholder] = self.my_embeddings
         return feed_dict
@@ -159,7 +150,6 @@ class Entity():
             while True:
                 ## Train
                 epoch_loss = float(0)
-                epoch += 1
                 train_accuracy = 0
                 for batch in batches:
                     feed_dict = self.get_feed_dict(batch, weights)
@@ -169,7 +159,7 @@ class Entity():
                 ## Dev
                 dev_accuracy = 0
                 for batch in dev_batches:
-                    feed_dict = self.get_feed_dict(batch, weights, False)
+                    feed_dict = self.get_feed_dict(batch, weights)
                     dev_accuracy += self.accuracy.eval(feed_dict=feed_dict)
                 print(epoch, "Train accuracy:", train_accuracy / len(batches),
                       "Loss: ", epoch_loss / float(len(batches)),
@@ -177,22 +167,21 @@ class Entity():
                 if epoch == self.epochs:
                     save_path = saver.save(self.sess, "model/Entity/entity_model_2.ckpt")
                     break
+                epoch += 1
             ## Test
-            test_accuracy = 0
             t_pred, a_pred, t_true, a_true = list(), list(), list(), list()
             for batch in test_batches:
-                feed_dict = self.get_feed_dict(batch, weights, False)
+                feed_dict = self.get_feed_dict(batch, weights)
                 dev_accuracy += self.accuracy.eval(feed_dict=feed_dict)
                 try:
                     target_, act_ = self.sess.run([self.predicted_target, self.predicted_act], feed_dict=feed_dict)
                     t_pred.extend(list(target_))
                     a_pred.extend(list(act_))
-                    t_true.extend([b[3] for b in batch])
-                    a_true.extend([b[4] for b in batch])
+                    t_true.extend([b["target_label"] for b in batch])
+                    a_true.extend([b["action_label"] for b in batch])
                 except Exception:
                     print()
-            print(epoch, "Test accuracy:", test_accuracy / len(batches), "\n",
-                  "Target F1 score: ", f1_score(t_true, t_pred, average="weighted"),
+            print("Target F1 score: ", f1_score(t_true, t_pred, average="weighted"),
                   "Target Precision: ", precision_score(t_true, t_pred, average="weighted"),
                   "Target Recall:", recall_score(t_true, t_pred, average="weighted"), "\n",
                   "Act F1 score: ", f1_score(a_true, a_pred, average="weighted"),

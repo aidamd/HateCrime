@@ -14,16 +14,10 @@ class Hi_Attn():
 
     def build_embedding(self):
         if self.pretrain:
-            embeddings = tf.Variable(tf.constant(0.0, shape=[len(self.vocabs), self.embedding_size]),
-                                     trainable=False, name="W")
-
             embedding_placeholder = tf.placeholder(tf.float32, [len(self.vocabs), self.embedding_size])
-            embedding_init = embeddings.assign(embedding_placeholder)
         else:
-            embedding_placeholder = tf.get_variable("embedding",
-                                                    initializer=tf.random_uniform(
-                                                        [len(self.vocabs), self.embedding_size], -1, 1),
-                                                    dtype=tf.float32)
+            embedding_placeholder = tf.get_variable("embedding", initializer=tf.random_uniform(
+                [len(self.vocabs), self.embedding_size], -1, 1), dtype=tf.float32)
         return embedding_placeholder
 
 
@@ -44,13 +38,17 @@ class Hi_Attn():
         embed = tf.reshape(self.embed, [shape[0] * shape[1], shape[2], self.embedding_size])
         self.sequence_length = tf.reshape(self.sequence_length, [tf.shape(embed)[0]])
 
-        cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
-        #cell_drop = tf.contrib.rnn.DropoutWrapper(cell, input_keep_prob=self.keep_prob)
-        self.network = tf.contrib.rnn.MultiRNNCell([cell] * self.num_layers)
+        f_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
+        #f_cell_drop = tf.contrib.rnn.DropoutWrapper(f_cell, input_keep_prob=self.keep_prob)
+        self.f_network = tf.contrib.rnn.MultiRNNCell([f_cell] * self.num_layers)
+
+        b_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size, reuse=False)
+        #b_cell_drop = tf.contrib.rnn.DropoutWrapper(b_cell, input_keep_prob=self.keep_prob)
+        self.b_network = tf.contrib.rnn.MultiRNNCell([b_cell] * self.num_layers)
 
         ############ WORD LEVEL ATTENTION ################
         # the inputs are reshaped to [all sentences, sentence_len] to be passed to LSTM
-        bi_outputs, bi_states = tf.nn.bidirectional_dynamic_rnn(self.network, self.network,
+        bi_outputs, bi_states = tf.nn.bidirectional_dynamic_rnn(self.f_network, self.b_network,
                                                                 embed,dtype=tf.float32,
                                                                 sequence_length=self.sequence_length,
                                                                 scope="word")
@@ -66,7 +64,7 @@ class Hi_Attn():
         ############################################################
 
         ############ SENTENCE LEVEL ATTENTION ################
-        sent_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size)
+        sent_cell = tf.contrib.rnn.GRUCell(num_units=self.hidden_size, reuse=False)
         #sent_cell_drop = tf.contrib.rnn.DropoutWrapper(sent_cell, input_keep_prob=self.keep_prob)
         self.sent_network = tf.contrib.rnn.MultiRNNCell([sent_cell] * self.num_layers)
 
@@ -117,8 +115,6 @@ class Hi_Attn():
                     hate = self.sess.run(self.predicted_label,
                                                   feed_dict=feed_dict)
                     hate_pred.extend(list(hate))
-                    #print(sum(hate_pred))
-                    # pickle.dump(hate_pred, open("patch_tmp.pkl", "wb"))
         return hate_pred, []
 
     def get_feed_dict(self, batch, train=True):
@@ -188,9 +184,4 @@ class Hi_Attn():
                   "Hate F1:", f1_score(hate_true, hate_pred, average="binary"),
                   "Precision", precision_score(hate_true, hate_pred),
                   "Recall", recall_score(hate_true, hate_pred))
-
-            ### Get sentences ###
         return [], [], []
-
-
-# attention Test report Test accuracy: 0.8555555635919938 Hate F1: 0.850909090909091 Precision 0.850909090909091 Recall 0.850909090909091

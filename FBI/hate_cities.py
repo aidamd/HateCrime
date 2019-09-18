@@ -5,15 +5,13 @@ import math
 dataset = {"state": [],
            "city": [],
            "year": [],
-           "statecity": [],
-           "kidnap": [],
-           "homicide": []
+           "count": [],
+           "statecity": []
            }
 
-for file in glob.glob("crime/*"):
-    s = False
+for file in glob.glob("hate/*"):
     df = pd.read_excel(file)
-    year = int(file[6:-4])
+    year = int(file[5:-4])
     print(year)
     agency = False
     state = ""
@@ -26,12 +24,6 @@ for file in glob.glob("crime/*"):
         2017:6
     }
     for i, row in df.iterrows():
-        if s:
-            homicide = [x for x in range(len(row)) if row[x] == "Homicide\nOffenses"][0]
-            kidnap = [x for x in range(len(row)) if row[x] == "Kidnapping/\nAbduction"][0]
-            s = False
-        if row[0] == "State":
-            s = True
         if isinstance(row[0], str):
             state = row[0]
         if row[1] == "Cities":
@@ -44,8 +36,7 @@ for file in glob.glob("crime/*"):
             else:
                 city = row[2]
                 try:
-                    homicides = row[homicide]
-                    kidnaps = row[kidnap]
+                    count = sum([row[3 + j] for j in range(cols[year])])
                 except Exception:
                     print()
                 state = state.replace("District of Columbia", "District-Columbia").replace(" ", "-")
@@ -53,10 +44,6 @@ for file in glob.glob("crime/*"):
                 dataset["state"].append(state)
                 dataset["city"].append(city)
                 dataset["year"].append(year)
+                dataset["count"].append(count)
                 dataset["statecity"].append(state.lower() + ", " + city.lower())
-                try:
-                    dataset["homicide"].append(int(homicides) if not math.isnan(homicides) else 0)
-                except Exception:
-                    print()
-                dataset["kidnap"].append(int(kidnaps) if not math.isnan(kidnaps) else 0)
-pd.DataFrame.from_dict(dataset).to_csv("FBI-crime-cities.csv", index=False)
+pd.DataFrame.from_dict(dataset).to_csv("FBI-hate-cities.csv", index=False)

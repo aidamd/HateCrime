@@ -11,13 +11,6 @@ def get_vocabs(df):
     data = [tokenizer.TreebankWordTokenizer().tokenize(sent) for sent in df]
     dictionary = Counter([word.lower() for sent in data for word in sent])
     words, counts = zip(*sorted(dictionary.items(), key=operator.itemgetter(1), reverse=True))
-
-    # Gets the list of words and characters in the dataset
-    """
-    v = open("google-10000-english-usa.txt", "r").readlines()
-    all = [r.replace("\n", "") for r in v]
-    vocab = all + ["<unk>", "<pad>"]
-    """
     vocab = list(words[:10000]) + ["<unk>", "<pad>"]
     print("vocab size:", len(vocab))
     return vocab
@@ -71,7 +64,6 @@ def stop_words(sent):
 
 def clean(sent):
     sent = stop_words(sent)
-    #sent = re.sub(r"[\s]+", " ", sent)
     return sent
 
 def TrainToBags(df, vocab, test=False, max_length=300):
@@ -83,34 +75,37 @@ def TrainToBags(df, vocab, test=False, max_length=300):
             words = [tokenizer.TreebankWordTokenizer().tokenize(sent) for sent in sent_tokenize(row["text"])]
             bag, sentences, lengths = bag_to_ids(dictionary, words, max_length)
             if test:
-                bags.append((bag, lengths, sentences))
+                bags.append({"article": bag,
+                             "lengths": lengths,
+                             "sent_lengths": sentences})
             else:
-                bags.append((bag, lengths, row["labels"], "", "", sentences))
+                bags.append({"article": bag,
+                             "lengths": lengths,
+                             "labels": row["labels"],
+                             "target_label": row["target"],
+                             "action_label": row["action"],
+                             "sent_lengths": sentences})
             counter.update(1)
     return bags
 
 def BatchIt(bags, batch_size, vocab, unlabeled=False):
-    if unlabeled:
-        lengths = 2
-    else:
-        lengths = 5
     batches = list()
     for idx in range(len(bags) // batch_size + 1):
         batch = bags[idx * batch_size: min((idx + 1) * batch_size, len(bags))]
         try:
-            max_bag = max([len(bag[0]) for bag in batch])
-            max_len = max([len(sent) for bag in batch for sent in bag[0]])
+            max_bag = max([len(bag["article"]) for bag in batch])
+            max_len = max([len(sent) for bag in batch for sent in bag["article"]])
         except Exception:
             continue
         for bag in batch:
             padding = [vocab.index("<pad>") for i in range(max_len)]
-            sub_pad = [vocab.index("<pad>") for i in range(max_len - len(bag[0][0]))]
-            for sent in bag[0][:bag[lengths]]:
+            sub_pad = [vocab.index("<pad>") for i in range(max_len - len(bag["article"][0]))]
+            for sent in bag["article"][:bag["sent_lengths"]]:
                 sent.extend(sub_pad)
-            if len(bag[0]) > bag[lengths]:
-                bag[0][bag[lengths]].extend(sub_pad)
-            while len(bag[0]) < max_bag:
-                bag[0].append(padding)
-                bag[1].append(0)
+            if len(bag["article"]) > bag["sent_lengths"]:
+                bag["article"][bag["sent_lengths"]].extend(sub_pad)
+            while len(bag["article"]) < max_bag:
+                bag["article"].append(padding)
+                bag["lengths"].append(0)
         batches.append(batch)
     return batches

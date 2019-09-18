@@ -4,7 +4,7 @@ import pandas as pd
 #patch = pd.read_csv("patch_500.tsv", delimiter="\t")
 #propublica = pd.read_csv("propublica_500.tsv", delimiter="\t")
 
-annotated_files = ["patch_3000.tsv", "patch_500.tsv"]
+annotated_files = ["patch3.tsv"]
 
 text = list()
 target = list()
