@@ -160,19 +160,18 @@ class MICNN():
             epoch = 1
             while True:
                 ## Train
-                epoch_loss = float(0)
-                train_accuracy = 0
+                epoch_loss, train_accuracy, test_accuracy = 0, 0, 0
                 for batch in batches:
                     feed_dict = self.get_feed_dict(batch)
-                    loss_val, _, log = self.sess.run([self.loss, self.training_op, self.logits],
+                    loss_val, _, train_val = self.sess.run([self.loss, self.training_op, self.accuracy],
                                                      feed_dict=feed_dict)
-                    train_accuracy += self.accuracy.eval(feed_dict=feed_dict)
+                    train_accuracy += train_val
                     epoch_loss += loss_val
                 ## Dev
-                test_accuracy = 0
                 for batch in dev_batches:
                     feed_dict = self.get_feed_dict(batch, False)
                     test_accuracy += self.accuracy.eval(feed_dict=feed_dict)
+
                 print(epoch, "Train accuracy:", train_accuracy / len(batches),
                       "Loss:", epoch_loss / float(len(batches)),
                       "Dev accuracy:", test_accuracy / len(dev_batches))
@@ -183,21 +182,16 @@ class MICNN():
             test_accuracy = 0
             hate_pred, hate_true = list(), list()
             for batch in test_batches:
-                feed_dict = self.get_feed_dict(batch, False)
-                test_accuracy += self.accuracy.eval(feed_dict=feed_dict)
-                try:
-                    hate = self.predicted_label.eval(feed_dict=feed_dict)
-                    hate_pred.extend(list(hate))
-                    hate_true.extend([b["labels"] for b in batch])
-                except Exception:
-                    print()
-            print("Test report",
-                  "Test accuracy:", test_accuracy / len(test_batches),
-                  "Hate F1:", f1_score(hate_true, hate_pred, average="binary"),
+                test_val, hate = self.sess.run([self.accuracy, self.predicted_label],
+                                               feed_dict=self.get_feed_dict(batch, False))
+                test_accuracy += test_val
+                hate_pred.extend(list(hate))
+                hate_true.extend([b["labels"] for b in batch])
+            print("Test accuracy:", test_accuracy / len(test_batches),
+                  "F1:", f1_score(hate_true, hate_pred, average="binary"),
                   "Precision", precision_score(hate_true, hate_pred),
                   "Recall", recall_score(hate_true, hate_pred))
 
-            ### Get sentences ###
         return self.get_sentences(batches, dev_batches, test_batches)
 
 
@@ -219,14 +213,3 @@ class MICNN():
                 test_sent.extend(list(self.sess.run(self.best_sentences, feed_dict=feed_dict)))
 
         return train_sent, dev_sent, test_sent
-
-
-# n = 3 Test report Test accuracy: 0.8384615475168595 Hate F1: 0.8260105448154658 Precision 0.7993197278911565 Recall 0.8545454545454545
-# n = 2 Test report Test accuracy: 0.8358974451055894 Hate F1: 0.8287795992714027 Precision 0.8302919708029197 Recall 0.8272727272727273
-
-# n = 2 accuracy Hate F1: 0.8100470957613815 Precision 0.7690014903129657 Recall 0.8557213930348259
-
-# homicide Test report Test accuracy: 0.7436893323382128 Hate F1: 0.786697247706422 Precision 0.7571743929359823 Recall 0.8186157517899761
-# kidnap Test report Test accuracy: 0.6870588372735417 Hate F1: 0.7866831072749692 Precision 0.7384259259259259 Recall 0.841688654353562
-
-# attention Test report Test accuracy: 0.8555555635919938 Hate F1: 0.850909090909091 Precision 0.850909090909091 Recall 0.850909090909091
